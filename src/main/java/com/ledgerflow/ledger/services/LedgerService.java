@@ -1,6 +1,7 @@
 package com.ledgerflow.ledger.services;
 
 import com.ledgerflow.ledger.entities.LedgerEntry;
+import com.ledgerflow.ledger.enums.EntryType;
 import com.ledgerflow.ledger.repositories.LedgerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -15,12 +16,12 @@ public class LedgerService {
     private final LedgerRepository ledgerRepository;
 
     @Transactional
-    public LedgerEntry createEntry(Long paymentId, BigDecimal amount, String currency, String entryType) {
+    public LedgerEntry createEntry(Long paymentId, BigDecimal amount, String currency, EntryType type) {
         LedgerEntry entry = LedgerEntry.builder()
                 .paymentId(paymentId)
                 .amount(amount)
                 .currency(currency)
-                .entryType(entryType)
+                .type(type)
                 .createdAt(LocalDateTime.now())
                 .build();
 
