@@ -8,13 +8,12 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "payments")
@@ -23,20 +22,20 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 public class Payment {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    private Long userId; // AccountId
+  private Long userId; // AccountId
 
-    private BigDecimal amount;
+  private BigDecimal amount;
 
-    private String currency;
+  private String currency;
 
-    @Enumerated(EnumType.STRING)
-    private PaymentStatus status;
+  @Enumerated(EnumType.STRING)
+  private PaymentStatus status;
 
-    private String referenceId; // PaymentId
+  private String referenceId; // PaymentId
 
-    private LocalDateTime createdAt;
+  private LocalDateTime createdAt;
 }
