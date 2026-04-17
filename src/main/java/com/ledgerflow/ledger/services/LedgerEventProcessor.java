@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -21,7 +22,7 @@ public class LedgerEventProcessor {
   private final LedgerRepository ledgerRepository;
   private final ProcessedEventRepository processedEventRepository;
 
-  @Transactional
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void processPaymentCompleted(PaymentCompletedEvent event) {
     try {
       processedEventRepository.saveAndFlush(
