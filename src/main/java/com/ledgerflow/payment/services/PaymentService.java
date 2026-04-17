@@ -1,14 +1,12 @@
 package com.ledgerflow.payment.services;
 
 import com.ledgerflow.ledger.enums.EntryType;
-import com.ledgerflow.ledger.services.LedgerService;
 import com.ledgerflow.payment.common.events.PaymentCompletedEvent;
 import com.ledgerflow.payment.entities.Payment;
 import com.ledgerflow.payment.enums.PaymentStatus;
 import com.ledgerflow.payment.repositories.PaymentRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -20,33 +18,32 @@ public class PaymentService {
 
   private final ApplicationEventPublisher eventPublisher;
   private final PaymentRepository paymentRepository;
-  private final LedgerService ledgerService;
 
   @Transactional
-  public Payment processPayment(BigDecimal amount, String currency) {
+  public Payment processPayment(Long userId, BigDecimal amount, String currency) {
     // 1. Create Payment
     Payment payment =
         Payment.builder()
+            .userId(userId)
             .amount(amount)
             .currency(currency)
             .status(PaymentStatus.PENDING)
-            .referenceId(UUID.randomUUID().toString())
             .createdAt(LocalDateTime.now())
             .build();
 
     // Save initial pending state
+    payment = paymentRepository.save(payment);
+    payment.setReferenceId(payment.getId().toString());
     payment = paymentRepository.save(payment);
 
     // 2. Simulate processing payment
     payment.setStatus(PaymentStatus.COMPLETED);
     payment = paymentRepository.save(payment);
 
-    // 3. Create Ledger Entry for the processed payment
-    ledgerService.createEntry(payment.getId(), amount, currency, EntryType.CREDIT);
-
-    // 4. Publish PaymentCompletedEvent
+    // 3. Publish PaymentCompletedEvent
     eventPublisher.publishEvent(
         new PaymentCompletedEvent(
+            payment.getId().toString(),
             payment.getId(),
             payment.getUserId(),
             payment.getAmount(),

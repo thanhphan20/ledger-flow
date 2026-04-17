@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentCompletedEvent {
+  private String eventId;
   private Long paymentId;
   private Long userId;
   private BigDecimal amount;
