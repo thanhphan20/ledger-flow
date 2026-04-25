@@ -1,6 +1,7 @@
 package com.ledgerflow.payment.entities;
 
 import com.ledgerflow.payment.enums.PaymentStatus;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -36,6 +37,10 @@ public class Payment {
   private PaymentStatus status;
 
   private String referenceId; // PaymentId
+
+  /** Client-supplied idempotency key — unique constraint prevents duplicate processing. */
+  @Column(unique = true)
+  private String idempotencyKey;
 
   private LocalDateTime createdAt;
 }

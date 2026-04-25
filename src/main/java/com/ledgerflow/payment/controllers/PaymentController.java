@@ -29,7 +29,10 @@ public class PaymentController {
   public ResponseEntity<Payment> processPayment(@RequestBody PaymentRequest request) {
     Payment payment =
         paymentService.processPayment(
-            request.getUserId(), request.getAmount(), request.getCurrency());
+            request.getUserId(),
+            request.getAmount(),
+            request.getCurrency(),
+            request.getIdempotencyKey());
     return ResponseEntity.ok(payment);
   }
 }
