@@ -5,6 +5,7 @@ import com.ledgerflow.payment.dtos.LoginResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +41,7 @@ public class AuthController {
       description = "Authenticates demo credentials and returns a signed JWT.")
   @ApiResponse(responseCode = "200", description = "Login successful")
   @ApiResponse(responseCode = "401", description = "Invalid credentials")
-  public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
+  public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
     try {
       authenticationManager.authenticate(
           new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword()));

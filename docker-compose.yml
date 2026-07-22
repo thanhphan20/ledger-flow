@@ -74,6 +74,10 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-payment:5432/ledgerflow_payment
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      # Dev-only value for the local compose stack. jwt.secret has no fallback in
+      # application.yml on purpose (fails closed rather than booting with a known key) - a real
+      # deployment must supply its own value here instead of reusing this one.
+      JWT_SECRET: dev-only-insecure-jwt-signing-key-change-me-1234567890
     depends_on:
       postgres-payment:
         condition: service_healthy

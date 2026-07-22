@@ -94,7 +94,13 @@ a native SQL join in the monolith; splitting the databases forced it out — see
 ## Authentication
 
 `payment-service` requires a JWT (shared-HMAC-secret resource server pattern) on everything
-except `POST /api/v1/auth/login` and `/actuator/health`. `ledger-service` is still
+except the paths `/api/v1/auth/login`, `/actuator/health`, and `/error` — the exemption is
+path-based in `SecurityConfig`'s matcher, not restricted to a specific HTTP method (though in
+practice only `POST`/`GET` are ever routed to those paths respectively). `/error` has to be
+exempted too: Spring Boot's default error handling internally forwards any `sendError()` (e.g.
+a `@Valid` failure) to `GET /error`, and without the exemption the security filter chain
+intercepts that forward and masks the real status with its own 401 — a validation failure would
+otherwise come back as "401 Unauthorized" instead of "400 Bad Request". `ledger-service` is still
 `permitAll()` — it has no business REST API to protect yet, not an oversight. Full detail in
 spec.md's "Authentication" section. This is authentication only, not authorization: don't
 assume a JWT's `sub` claim is cross-checked against a request's `userId` anywhere — it isn't,

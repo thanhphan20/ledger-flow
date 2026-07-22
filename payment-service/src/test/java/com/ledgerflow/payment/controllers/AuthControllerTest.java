@@ -64,6 +64,16 @@ class AuthControllerTest {
   }
 
   @Test
+  void loginWithBlankCredentialsIsRejectedByValidation() {
+    LoginRequest request = LoginRequest.builder().username("").password("").build();
+
+    ResponseEntity<LoginResponse> response =
+        restTemplate.postForEntity("/api/v1/auth/login", request, LoginResponse.class);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+  }
+
+  @Test
   void authenticatedPaymentRequestSucceeds() {
     String token = login().getBody().getToken();
 

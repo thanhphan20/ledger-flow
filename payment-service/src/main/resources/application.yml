@@ -34,8 +34,11 @@ management:
       exposure:
         include: health
 
-# Dev-only placeholder - override via the JWT_SECRET env var in any real deployment. HS256
-# requires a key of at least 32 bytes (256 bits); Nimbus throws at bean-creation time (the app
-# fails to boot, not just JWT requests) if this is ever shortened below that.
+# No default here deliberately: a checked-in fallback would mean any deployment that forgets to
+# set JWT_SECRET boots successfully with a signing key anyone can read from this public repo,
+# silently minting forgeable tokens. Fails closed instead - the app won't start without it. HS256
+# also requires a key of at least 32 bytes (256 bits); Nimbus throws at bean-creation time either
+# way if it's ever set below that. docker-compose.yml and the IntelliJ run config supply a
+# dev-only value for local use; CI's docker-compose-e2e job gets it from docker-compose.yml too.
 jwt:
-  secret: ${JWT_SECRET:dev-only-insecure-jwt-signing-key-change-me-1234567890}
+  secret: ${JWT_SECRET}

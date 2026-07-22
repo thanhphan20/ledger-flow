@@ -120,8 +120,14 @@ the parent `pom.xml` and the `ledgerflow-contracts` module.
 
 ## Authentication
 
-`payment-service` requires a JWT on every request except `POST /api/v1/auth/login` and
-`GET /actuator/health` (the latter must stay open for docker-compose/k8s health probes).
+`payment-service` requires a JWT on every request except the paths `/api/v1/auth/login`,
+`/actuator/health` (the latter must stay open for docker-compose/k8s health probes), and
+`/error`. The exemption in `SecurityConfig` is path-based, not method-restricted — it isn't
+specifically "only `POST` to `/login`" or "only `GET` to `/health`", even though those are the
+only methods actually routed to those paths today. `/error` is exempted for a different reason:
+Spring Boot's default error handling forwards any `sendError()` internally to `GET /error`
+(e.g. a `@Valid` failure on the login request), and without permitting it the security chain
+would intercept that forward and mask the real status code with its own 401 response.
 `ledger-service` is unchanged — it has no business REST API (only Actuator health), so there's
 nothing there to protect yet; revisit when it gets a real API or an API gateway is introduced.
 
