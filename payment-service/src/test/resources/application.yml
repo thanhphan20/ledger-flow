@@ -22,3 +22,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
+
+# Same dev-only value as src/main/resources/application.yml - this file replaces main config
+# entirely on the test classpath, so it must be repeated here or JwtConfig's beans fail to
+# construct and every @SpringBootTest in this module fails to start its context.
+jwt:
+  secret: dev-only-insecure-jwt-signing-key-change-me-1234567890

@@ -91,14 +91,22 @@ a native SQL join in the monolith; splitting the databases forced it out — see
   that's how `Account`, `User`, and `LedgerService.createEntry` got dropped during the
   extraction.
 
+## Authentication
+
+`payment-service` requires a JWT (shared-HMAC-secret resource server pattern) on everything
+except `POST /api/v1/auth/login` and `/actuator/health`. `ledger-service` is still
+`permitAll()` — it has no business REST API to protect yet, not an oversight. Full detail in
+spec.md's "Authentication" section. This is authentication only, not authorization: don't
+assume a JWT's `sub` claim is cross-checked against a request's `userId` anywhere — it isn't,
+deliberately, for this milestone.
+
 ## What's explicitly not done yet
 
-- **Security is a wide-open placeholder.** Both services' `SecurityConfig` is
-  `authorizeHttpRequests(auth -> auth.anyRequest().permitAll())` with CSRF disabled. This is
-  not an oversight to "fix" opportunistically — it's a deliberately deferred milestone (JWT /
-  OAuth2 resource server pattern). Don't add auth-adjacent code without checking spec.md first.
-- **No Kubernetes manifests, no API gateway, no schema registry.** See spec.md's "Explicitly
-  out of scope" section before assuming any of these should exist.
+- **No persisted user store.** Login uses one hardcoded in-memory demo user
+  (`InMemoryUserDetailsManager` in `JwtConfig`), not a database-backed one. Don't assume an
+  `AppUser`/users table exists anywhere.
+- **No Kubernetes manifests, no API gateway, no schema registry, no JWKS/asymmetric keys.**
+  See spec.md's "Explicitly out of scope" section before assuming any of these should exist.
 
 ## Git workflow observed in this repo
 

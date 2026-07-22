@@ -37,6 +37,10 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 		<dependency>
@@ -88,6 +92,14 @@
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- TestRestTemplate's autoconfiguration (spring-boot-resttestclient, pulled in transitively
+		     via spring-boot-starter-webmvc-test) needs RestTemplateBuilder, which Boot 4 split into
+		     its own module rather than shipping inside spring-boot-autoconfigure. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-restclient</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

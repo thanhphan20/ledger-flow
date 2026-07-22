@@ -33,3 +33,9 @@ management:
     web:
       exposure:
         include: health
+
+# Dev-only placeholder - override via the JWT_SECRET env var in any real deployment. HS256
+# requires a key of at least 32 bytes (256 bits); Nimbus throws at bean-creation time (the app
+# fails to boot, not just JWT requests) if this is ever shortened below that.
+jwt:
+  secret: ${JWT_SECRET:dev-only-insecure-jwt-signing-key-change-me-1234567890}
