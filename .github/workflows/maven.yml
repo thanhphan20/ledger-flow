@@ -17,7 +17,7 @@ jobs:
       postgres:
         image: postgres:latest
         env:
-          POSTGRES_DB: ledgerflow
+          POSTGRES_DB: ledgerflow_payment
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
         ports:
@@ -42,6 +42,12 @@ jobs:
 
     - name: Make Maven Wrapper Executable
       run: chmod +x mvnw
+
+    # ledger-service and payment-service each own their own database; the postgres service
+    # container above only creates ledgerflow_payment at startup (via POSTGRES_DB), so
+    # ledgerflow_ledger needs to be created explicitly before the build/tests run.
+    - name: Create ledger-service database
+      run: PGPASSWORD=password psql -h localhost -U postgres -c "CREATE DATABASE ledgerflow_ledger;"
 
     - name: Format, Fix and Build with Maven
       run: ./mvnw clean spotless:apply install -B
