@@ -118,29 +118,62 @@ broker in KRaft mode (no Zookeeper), and a Kafdrop UI for inspecting topics/cons
 context must be the **repo root** (not the module directory), since the build needs to see
 the parent `pom.xml` and the `ledgerflow-contracts` module.
 
+## Authentication
+
+`payment-service` requires a JWT on every request except the paths `/api/v1/auth/login`,
+`/actuator/health` (the latter must stay open for docker-compose/k8s health probes), and
+`/error`. The exemption in `SecurityConfig` is path-based, not method-restricted — it isn't
+specifically "only `POST` to `/login`" or "only `GET` to `/health`", even though those are the
+only methods actually routed to those paths today. `/error` is exempted for a different reason:
+Spring Boot's default error handling forwards any `sendError()` internally to `GET /error`
+(e.g. a `@Valid` failure on the login request), and without permitting it the security chain
+would intercept that forward and mask the real status code with its own 401 response.
+`ledger-service` is unchanged — it has no business REST API (only Actuator health), so there's
+nothing there to protect yet; revisit when it gets a real API or an API gateway is introduced.
+
+- **Issuing**: `POST /api/v1/auth/login` (`AuthController`) authenticates against an in-memory
+  demo user store (`InMemoryUserDetailsManager`, one user, BCrypt-hashed password — not
+  persisted, see "Explicitly out of scope" below), then signs a JWT via `JwtEncoder`
+  (`NimbusJwtEncoder`) using a shared HMAC secret. Claims: `sub` (username), `iat`, `exp`
+  (~1 hour), a `roles` claim. Wrong credentials → 401.
+- **Validating**: `SecurityConfig`'s filter chain is `.oauth2ResourceServer(oauth2 ->
+  oauth2.jwt(...))`, backed by a `JwtDecoder` (`NimbusJwtDecoder`) using the *same* shared
+  secret — both beans are keyed off one `jwt.secret` property (`JwtConfig`), env-var
+  overridable via `JWT_SECRET`, with an obviously-fake ≥32-byte dev default (HS256 requires a
+  minimum 256-bit key; a shorter one fails at bean-construction time — the app won't boot, not
+  just reject JWT calls).
+- **Known limitation, deliberate for this milestone**: this is authentication only, not
+  authorization. Any valid JWT from the one demo user can submit a payment for any `userId` in
+  the request body — there's no cross-check between the token's `sub` claim and the payment's
+  `userId`. That's a natural next step once ownership/authorization matters, not built here.
+
 ## Security — current state
 
-Both services' `SecurityConfig` is a wide-open `permitAll()` placeholder (CSRF disabled, frame
-options disabled). This is a known, deliberate placeholder, not an oversight — see "Explicitly
-out of scope" below.
+`ledger-service`'s `SecurityConfig` is still a wide-open `permitAll()` placeholder (CSRF
+disabled, frame options disabled) — deliberate, since it has no protected surface yet (see
+above). `payment-service` now requires authentication as described above.
 
 ## Explicitly out of scope (deliberate, not forgotten)
 
 These were discussed and intentionally deferred, in roughly this order:
 
-1. **JWT authentication.** Planned approach: one place issues JWTs (a login endpoint —
-   possibly on `payment-service`, possibly a new lightweight `auth-service` later), and both
-   `payment-service` and `ledger-service` validate JWTs locally as OAuth2 **resource
-   servers** (signature/expiry/claims check against a shared secret or a JWKS endpoint) — no
-   network call to a central auth service per request. Not yet implemented.
-2. **API gateway.** Would sit in front of both services once JWT validation needs a single
-   entry point.
-3. **Kubernetes deployment.** The eventual target once the services are solid running under
+1. **Persisted user store / registration.** The demo login is in-memory, one hardcoded user —
+   a persisted `AppUser` table (payment-service already has JPA/Postgres wired up) is the
+   natural next step, deliberately not bundled into the JWT-mechanics milestone.
+2. **Asymmetric keys / JWKS endpoint.** A shared HMAC secret is the deliberate starting point;
+   a real auth-service signing with its own private key and exposing a JWKS endpoint for other
+   services to fetch public keys from is more "production-real" but adds infrastructure this
+   milestone didn't need yet.
+3. **`ledger-service` as a resource server.** No business API to protect yet — see
+   "Authentication" above.
+4. **API gateway.** Would sit in front of both services once there's a single entry point
+   worth centralizing auth at.
+5. **Kubernetes deployment.** The eventual target once the services are solid running under
    docker-compose.
-4. **Schema registry / Avro.** JSON is deliberately used for `payment.completed` today; this
+6. **Schema registry / Avro.** JSON is deliberately used for `payment.completed` today; this
    is a real future concern once a second event type needs to share a topic or the schema
    needs to evolve safely.
-5. **Ack-loop reconciliation.** A `ledgerAckAt` column + a `ledger.entry-posted` ack topic,
+7. **Ack-loop reconciliation.** A `ledgerAckAt` column + a `ledger.entry-posted` ack topic,
    replacing the current time-threshold heuristic — a legitimate next step, but sequenced
    after the one-directional Kafka flow is comfortable, not bundled into it.
 

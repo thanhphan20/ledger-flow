@@ -85,13 +85,18 @@ jobs:
           done
         done
 
-    # Real end-to-end check: post a payment through payment-service, let it flow over the
-    # real Kafka broker into ledger-service, and confirm a LedgerEntry actually landed in
-    # ledger-service's own Postgres database (mapped to host port 5433 in docker-compose.yml).
+    # Real end-to-end check: log in for a JWT, post a payment through payment-service, let it
+    # flow over the real Kafka broker into ledger-service, and confirm a LedgerEntry actually
+    # landed in ledger-service's own Postgres database (mapped to host port 5433 in
+    # docker-compose.yml). jq is preinstalled on GitHub-hosted runners.
     - name: Post a payment and verify it reaches ledger-service via Kafka
       run: |
+        TOKEN=$(curl -sf -X POST http://localhost:8081/api/v1/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"username": "demo", "password": "demo-password"}' | jq -r '.token')
         curl -sf -X POST http://localhost:8081/api/v1/payments \
           -H "Content-Type: application/json" \
+          -H "Authorization: Bearer $TOKEN" \
           -d '{"userId": 1, "amount": 10.00, "currency": "USD", "idempotencyKey": "ci-e2e-check"}'
         echo
         echo "Waiting for the event to flow through Kafka into ledger-service..."
