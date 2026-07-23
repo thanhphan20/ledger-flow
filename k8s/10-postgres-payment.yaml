@@ -46,6 +46,21 @@ spec:
         runAsUser: 999
         runAsGroup: 999
         fsGroup: 999
+      # A fresh PVC is provisioned root-owned. postgres's own entrypoint needs to chown/chmod
+      # its data dir to itself on first init, which needs capabilities the main container
+      # deliberately drops - so fix ownership here, as root, before the hardened container starts.
+      initContainers:
+        - name: fix-data-permissions
+          image: postgres:16
+          command: ["sh", "-c", "chown -R 999:999 /var/lib/postgresql/data /var/run/postgresql && chmod 0700 /var/lib/postgresql/data"]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
       containers:
         - name: postgres
           image: postgres:16
