@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-ledger-credentials
+  namespace: ledger-flow
+type: Opaque
+stringData:
+  # Dev-only value, matching docker-compose.yml. A real deployment must supply its own.
+  POSTGRES_PASSWORD: password
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-ledger-data
+  namespace: ledger-flow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-ledger
+  namespace: ledger-flow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-ledger
+  # RollingUpdate would try to start a second pod against the same ReadWriteOnce PVC on
+  # any future re-apply, which hangs. Recreate tears the old pod down first.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: postgres-ledger
+    spec:
+      # postgres:16 runs as the built-in postgres user (uid/gid 999); fsGroup makes the
+      # mounted PVC writable by that group.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: ledgerflow_ledger
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-ledger-credentials
+                  key: POSTGRES_PASSWORD
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            # postgres's entrypoint and server need to write here; readOnlyRootFilesystem
+            # means these must be separate writable mounts rather than part of the rootfs.
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /var/run/postgresql
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-ledger-data
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-ledger
+  namespace: ledger-flow
+spec:
+  selector:
+    app: postgres-ledger
+  ports:
+    - port: 5432
+      targetPort: 5432
