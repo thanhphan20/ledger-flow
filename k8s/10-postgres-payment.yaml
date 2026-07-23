@@ -39,6 +39,13 @@ spec:
       labels:
         app: postgres-payment
     spec:
+      # postgres:16 runs as the built-in postgres user (uid/gid 999); fsGroup makes the
+      # mounted PVC writable by that group.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
       containers:
         - name: postgres
           image: postgres:16
@@ -54,9 +61,20 @@ spec:
                 secretKeyRef:
                   name: postgres-payment-credentials
                   key: POSTGRES_PASSWORD
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            # postgres's entrypoint and server need to write here; readOnlyRootFilesystem
+            # means these must be separate writable mounts rather than part of the rootfs.
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /var/run/postgresql
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]
@@ -73,6 +91,10 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: postgres-payment-data
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
