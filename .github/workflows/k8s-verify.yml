@@ -1,0 +1,57 @@
+name: K8s Verify
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  k8s-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+
+    # Same node image pinned in the deployment docs/plan, so CI and local `kind create
+    # cluster` runs land on the same k8s version.
+    - name: Create kind cluster
+      uses: helm/kind-action@v1
+      with:
+        cluster_name: ledger-flow
+        node_image: kindest/node:v1.31.2
+
+    # Namespace first: the rest of k8s/ is namespace-scoped and a single `kubectl apply
+    # -f k8s/` doesn't guarantee cross-file ordering.
+    - name: Apply namespace
+      run: kubectl apply -f k8s/00-namespace.yaml
+
+    - name: Apply remaining manifests
+      run: kubectl apply -f k8s/
+
+    - name: Wait for Postgres pods to be ready
+      run: |
+        kubectl wait --for=condition=ready pod -l app=postgres-payment -n ledger-flow --timeout=120s
+        kubectl wait --for=condition=ready pod -l app=postgres-ledger -n ledger-flow --timeout=120s
+
+    # Real functional check, not just "pod is Ready": connect and confirm each database
+    # actually accepts queries.
+    - name: Verify each database is reachable
+      run: |
+        kubectl exec -n ledger-flow deploy/postgres-payment -- psql -U postgres -d ledgerflow_payment -c "select 1;"
+        kubectl exec -n ledger-flow deploy/postgres-ledger -- psql -U postgres -d ledgerflow_ledger -c "select 1;"
+
+    - name: Dump pod status and events on failure
+      if: failure()
+      run: |
+        kubectl get pods -n ledger-flow -o wide
+        kubectl describe pods -n ledger-flow
+        kubectl get events -n ledger-flow --sort-by='.lastTimestamp'
+
+    # No explicit teardown: the kind cluster lives only inside this job's runner VM,
+    # which GitHub tears down when the job ends.
