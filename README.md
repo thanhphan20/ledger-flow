@@ -6,6 +6,8 @@ as a monolith and has since been split into two independently-deployable microse
 [spec.md](spec.md) for the full system design and [AGENTS.md](AGENTS.md) for repo conventions.
 
 [![Maven CI](https://github.com/thanhphan20/ledger-flow/actions/workflows/maven.yml/badge.svg)](https://github.com/thanhphan20/ledger-flow/actions/workflows/maven.yml)
+[![Docker Compose E2E](https://github.com/thanhphan20/ledger-flow/actions/workflows/docker-compose-e2e.yml/badge.svg)](https://github.com/thanhphan20/ledger-flow/actions/workflows/docker-compose-e2e.yml)
+[![K8s Verify](https://github.com/thanhphan20/ledger-flow/actions/workflows/k8s-verify.yml/badge.svg)](https://github.com/thanhphan20/ledger-flow/actions/workflows/k8s-verify.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
@@ -25,6 +27,11 @@ as a monolith and has since been split into two independently-deployable microse
   `failed_events` table instead of crashing the consumer.
 - **Local dev via Docker Compose**: two Postgres instances, a single-node Kafka broker
   (KRaft mode, no Zookeeper), and a Kafdrop UI for inspecting topics.
+- **JWT authentication on payment-service**: `POST /api/v1/auth/login` authenticates a demo
+  user and issues an HMAC-signed JWT; every other `payment-service` endpoint (except the health
+  check) is a Spring Security OAuth2 resource server that validates that token.
+- **Early Kubernetes support**: `k8s/` has manifests for the `ledger-flow` namespace and both
+  Postgres instances, applied to a real `kind` cluster and smoke-tested in CI.
 - **Automated formatting**: Spotless + Google Java Format, enforced in `mvn verify`.
 
 ---
@@ -36,7 +43,9 @@ as a monolith and has since been split into two independently-deployable microse
 - **Messaging**: Apache Kafka (via spring-kafka)
 - **Database**: PostgreSQL (one instance per service)
 - **Persistence**: Spring Data JPA / Hibernate
-- **Tooling**: Maven (multi-module), Spotless, Lombok, Docker Compose, GitHub Actions
+- **Security**: Spring Security OAuth2 Resource Server, JWT via Nimbus JOSE (`payment-service`)
+- **Tooling**: Maven (multi-module), Spotless, Lombok, Docker Compose, Kubernetes (`kind`,
+  `kubectl`), GitHub Actions
 
 ---
 
@@ -46,9 +55,10 @@ as a monolith and has since been split into two independently-deployable microse
 ledger-flow/
   pom.xml                  parent (Maven multi-module, no source of its own)
   ledgerflow-contracts/    shared Kafka event types (PaymentCompletedEvent, EntryType)
-  payment-service/         owns `payments`; only Kafka producer; REST API
+  payment-service/         owns `payments`; only Kafka producer; REST API; JWT resource server
   ledger-service/          owns ledger tables; only Kafka consumer; no public REST API
   docker-compose.yml       local dev stack
+  k8s/                     namespace + Postgres manifests (app services not deployed yet)
 ```
 
 1. `POST /api/v1/payments` on **payment-service** creates a `Payment` and commits it.
@@ -59,8 +69,72 @@ ledger-flow/
 4. A scheduled reconciliation job in `payment-service` republishes stale `COMPLETED` payments
    as a safety net — safe because of ledger-service's idempotency guard.
 
-Full detail, including the producer/consumer guarantees and what's deliberately out of scope
-(JWT auth, API gateway, Kubernetes), is in [spec.md](spec.md).
+Full detail, including the producer/consumer guarantees, the JWT auth flow, the Kubernetes
+manifests, and what's still deliberately out of scope (persisted user store, API gateway,
+schema registry), is in [spec.md](spec.md).
+
+---
+
+## 🗺️ Architecture
+
+```mermaid
+flowchart TD
+    Client(["Client"])
+
+    subgraph PS["payment-service (:8081)"]
+        Auth["AuthController<br/>POST /api/v1/auth/login"]
+        PayAPI["PaymentController<br/>POST /api/v1/payments"]
+        PaySvc["PaymentService"]
+        PayRepo["PaymentRepository"]
+        Bridge["PaymentEventKafkaBridge<br/>(publishes after commit)"]
+        Recon["ReconciliationService<br/>(scheduled republish of stale payments)"]
+    end
+
+    subgraph LS["ledger-service (:8082)"]
+        Listener["LedgerEventHandler<br/>@KafkaListener"]
+        Proc["LedgerEventProcessor<br/>(idempotency guard)"]
+        LedgerRepo["LedgerRepository"]
+        FailedRec["FailedEventRecorder<br/>(retry backoff + DLQ)"]
+    end
+
+    Contracts["ledgerflow-contracts<br/>PaymentCompletedEvent"]
+    PgPayment[("PostgreSQL<br/>ledgerflow_payment")]
+    PgLedger[("PostgreSQL<br/>ledgerflow_ledger")]
+    KafkaTopic{{"Kafka topic<br/>payment.completed"}}
+
+    Client -- "1: login, gets JWT" --> Auth
+    Client -- "2: POST payment (JWT)" --> PayAPI
+    PayAPI --> PaySvc
+    PaySvc --> PayRepo
+    PayRepo --> PgPayment
+    PaySvc -. "after commit" .-> Bridge
+    Bridge --> KafkaTopic
+    Recon --> PgPayment
+    Recon -. "republish stale" .-> KafkaTopic
+
+    KafkaTopic --> Listener
+    Listener --> Proc
+    Proc --> LedgerRepo
+    LedgerRepo --> PgLedger
+    Proc -. "processing failure" .-> FailedRec
+    FailedRec --> PgLedger
+
+    Contracts -.-> Bridge
+    Contracts -.-> Listener
+```
+
+`payment-service` and `ledger-service` are separate Spring Boot processes with separate
+Postgres databases, sharing only the event types in `ledgerflow-contracts`. Requests hit
+`payment-service`'s REST API behind Spring Security's JWT resource server (`AuthController`
+issues the token, `SecurityConfig` enforces it on every other endpoint). Once a payment
+commits, `PaymentEventKafkaBridge` publishes `PaymentCompletedEvent` to the `payment.completed`
+Kafka topic; `ledger-service`'s `LedgerEventHandler` consumes it, and `LedgerEventProcessor`
+uses a `ProcessedEvent` uniqueness check to idempotently post a `LedgerEntry` (or skip a
+redelivered duplicate). Processing failures are retried with backoff and, if still failing,
+recorded to a `failed_events` table instead of crashing the consumer. `ReconciliationService`
+periodically re-publishes stale `COMPLETED` payments as a safety net against lost Kafka
+publishes. Local dev infra (Postgres x2, Kafka, Kafdrop) is defined in `docker-compose.yml`;
+`k8s/` has namespace and Postgres manifests for a Kubernetes deployment.
 
 ---
 
@@ -83,11 +157,16 @@ docker compose up --build
 This starts both Postgres databases, a Kafka broker, Kafdrop (`http://localhost:9000`),
 `payment-service` (`http://localhost:8081`), and `ledger-service` (`http://localhost:8082`).
 
-Try it:
+Try it (payment-service requires a JWT on this endpoint, so log in first):
 
 ```bash
+TOKEN=$(curl -s -X POST http://localhost:8081/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "demo", "password": "demo-password"}' | jq -r '.token')
+
 curl -X POST http://localhost:8081/api/v1/payments \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"userId": 1, "amount": 42.50, "currency": "USD", "idempotencyKey": "demo-001"}'
 ```
 
@@ -126,12 +205,14 @@ before you add a new test).
 
 ## 🤖 CI/CD
 
-GitHub Actions (`.github/workflows/maven.yml`) runs on every push/PR to `main`:
-1. Builds and tests all three Maven modules against real Postgres databases.
-2. Builds both service Docker images and brings up the full `docker-compose.yml` stack.
-3. Posts a real payment through it and confirms the event reaches `ledger-service` and lands
-   in Postgres — end-to-end verification of the Kafka wiring and the Dockerfiles, not just
-   the JVM-level tests.
+Three GitHub Actions workflows run on every push/PR to `main`:
+1. **`maven.yml`** — builds and tests all three Maven modules against a real Postgres database.
+2. **`docker-compose-e2e.yml`** — builds both service Docker images, brings up the full
+   `docker-compose.yml` stack, logs in for a JWT, posts a real payment through it, and confirms
+   the event reaches `ledger-service` and lands in Postgres — end-to-end verification of the
+   Kafka wiring, the JWT flow, and the Dockerfiles, not just the JVM-level tests.
+3. **`k8s-verify.yml`** — spins up a `kind` cluster, applies the manifests in `k8s/`, and
+   confirms both Postgres pods come up and accept queries.
 
 To manually format code: `./mvnw spotless:apply`
 

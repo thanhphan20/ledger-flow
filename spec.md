@@ -118,6 +118,16 @@ broker in KRaft mode (no Zookeeper), and a Kafdrop UI for inspecting topics/cons
 context must be the **repo root** (not the module directory), since the build needs to see
 the parent `pom.xml` and the `ledgerflow-contracts` module.
 
+`k8s/` has early Kubernetes manifests: `00-namespace.yaml` (the `ledger-flow` namespace) and
+`10-postgres-payment.yaml` / `11-postgres-ledger.yaml` (a Secret + PVC + hardened Deployment +
+Service for each Postgres instance, matching `docker-compose.yml`'s credentials and database
+names). The `00-`/`10-`/`11-` filename prefixes exist because `kubectl apply -f k8s/` doesn't
+guarantee cross-file ordering and the namespace must exist before the namespaced resources.
+`.github/workflows/k8s-verify.yml` applies them to a real `kind` cluster in CI and confirms
+both databases come up and accept queries. Only the databases are on Kubernetes so far —
+`payment-service` and `ledger-service` themselves aren't deployed there yet (see "Explicitly
+out of scope" below).
+
 ## Authentication
 
 `payment-service` requires a JWT on every request except the paths `/api/v1/auth/login`,
@@ -168,8 +178,11 @@ These were discussed and intentionally deferred, in roughly this order:
    "Authentication" above.
 4. **API gateway.** Would sit in front of both services once there's a single entry point
    worth centralizing auth at.
-5. **Kubernetes deployment.** The eventual target once the services are solid running under
-   docker-compose.
+5. **Full Kubernetes deployment of the application services.** `k8s/` already has manifests
+   for the namespace and both Postgres instances (see "Local infrastructure" above), verified
+   in CI against a real `kind` cluster, but `payment-service` and `ledger-service` themselves
+   aren't deployed to Kubernetes yet — Deployment/Service manifests for the two app JARs, plus
+   Secrets for `JWT_SECRET` and the Kafka bootstrap config, are the natural next step.
 6. **Schema registry / Avro.** JSON is deliberately used for `payment.completed` today; this
    is a real future concern once a second event type needs to share a topic or the schema
    needs to evolve safely.

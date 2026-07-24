@@ -18,10 +18,11 @@ Multi-module Maven build, root `pom.xml` is `packaging: pom` (no source of its o
 ledger-flow/
   pom.xml                    parent - dependencyManagement/pluginManagement only
   ledgerflow-contracts/      shared library: Kafka event types, no Spring deps
-  payment-service/           owns payments, publishes to Kafka
+  payment-service/           owns payments, publishes to Kafka; JWT resource server
   ledger-service/            consumes from Kafka, posts ledger entries
   docker-compose.yml         local dev: 2 Postgres + Kafka (KRaft) + Kafdrop
-  .github/workflows/maven.yml
+  k8s/                       namespace + Postgres manifests (app services not deployed yet)
+  .github/workflows/         maven.yml, docker-compose-e2e.yml, k8s-verify.yml
 ```
 
 Each service module mirrors the same internal layout:
@@ -111,8 +112,10 @@ deliberately, for this milestone.
 - **No persisted user store.** Login uses one hardcoded in-memory demo user
   (`InMemoryUserDetailsManager` in `JwtConfig`), not a database-backed one. Don't assume an
   `AppUser`/users table exists anywhere.
-- **No Kubernetes manifests, no API gateway, no schema registry, no JWKS/asymmetric keys.**
-  See spec.md's "Explicitly out of scope" section before assuming any of these should exist.
+- **`k8s/` only deploys the two Postgres databases (plus the namespace), not the app
+  services.** No Deployment/Service manifests for `payment-service`/`ledger-service` yet — don't
+  assume they can be `kubectl apply`'d anywhere. Still no API gateway, no schema registry, no
+  JWKS/asymmetric keys. See spec.md's "Explicitly out of scope" section for the full list.
 
 ## Git workflow observed in this repo
 
