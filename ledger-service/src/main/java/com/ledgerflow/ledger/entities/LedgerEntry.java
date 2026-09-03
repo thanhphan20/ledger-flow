@@ -30,6 +30,8 @@ public class LedgerEntry {
 
   private Long paymentId;
 
+  private Long loanId;
+
   private BigDecimal amount;
 
   private String currency;
