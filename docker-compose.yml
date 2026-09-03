@@ -31,6 +31,22 @@ services:
       timeout: 5s
       retries: 10
 
+  postgres-loan:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ledgerflow_loan
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-loan-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # Single-node Kafka in KRaft mode (no Zookeeper). PLAINTEXT is for other containers on this
   # compose network (e.g. kafka:19092); PLAINTEXT_HOST is for tools running on the host machine
   # (e.g. a console consumer at localhost:9092).
@@ -99,6 +115,24 @@ services:
       kafka:
         condition: service_healthy
 
+  loan-service:
+    build:
+      context: .
+      dockerfile: loan-service/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-loan:5432/ledgerflow_loan
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      # Dev-only value for the local compose stack, same rationale as payment-service's.
+      JWT_SECRET: dev-only-insecure-jwt-signing-key-change-me-1234567890
+    depends_on:
+      postgres-loan:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
 volumes:
   postgres-payment-data:
   postgres-ledger-data:
+  postgres-loan-data:
