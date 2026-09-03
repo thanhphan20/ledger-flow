@@ -1,6 +1,6 @@
-package com.ledgerflow.ledger.entities;
+package com.ledgerflow.loan.entities;
 
-import com.ledgerflow.contracts.events.EntryType;
+import com.ledgerflow.loan.enums.LoanStatus;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -16,28 +16,26 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "ledger_entries")
+@Table(name = "loans")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class LedgerEntry {
+public class Loan {
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  private Long accountId;
-
-  private Long paymentId;
-
-  private Long loanId;
+  private Long userId;
 
   private BigDecimal amount;
 
   private String currency;
 
+  private Integer termMonths;
+
   @Enumerated(EnumType.STRING)
-  private EntryType type; // e.g., DEBIT or CREDIT
+  private LoanStatus status;
 
   private LocalDateTime createdAt;
 }
