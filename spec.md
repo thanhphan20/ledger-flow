@@ -7,18 +7,19 @@ See [AGENTS.md](AGENTS.md) for build commands and repo conventions. This documen
 
 LedgerFlow started as a single Spring Boot monolith with two logical modules (`payment` and
 `ledger`) talking to each other through an in-process Spring `ApplicationEventPublisher`. It
-has since been split into two independently-deployable services — `payment-service` and
-`ledger-service` — that communicate only through Kafka. The split was driven by a learning
-goal (understand real microservices, not a "modular monolith"), which is why the two services
-are 100% decoupled: no shared database, no shared JVM, no synchronous calls between them.
+has since been split into three independently-deployable services — `payment-service`,
+`ledger-service`, and `loan-service` — that communicate only through Kafka. The split was
+driven by a learning goal (understand real microservices, not a "modular monolith"), which is
+why the three services are 100% decoupled: no shared database, no shared JVM, no synchronous
+calls between them.
 
-## The two services
+## The three services
 
 ### payment-service
 
 Owns the `payments` table (its own database: `ledgerflow_payment`). Exposes
-`POST /api/v1/payments`, which creates a `Payment` (`PENDING` → `COMPLETED`) and is the only
-Kafka **producer** in the system.
+`POST /api/v1/payments`, which creates a `Payment` (`PENDING` → `COMPLETED`) and is one of two
+Kafka **producers** in the system.
 
 Publish path: `PaymentService.processPayment` still fires an in-process
 `ApplicationEventPublisher.publishEvent(PaymentCompletedEvent)` inside its `@Transactional`
@@ -58,6 +59,11 @@ which is where the idempotency guarantee lives:
    return — this event has already been processed, do nothing further.
 3. Otherwise, create and save the `LedgerEntry`.
 
+It also consumes `loan.approved` via a dedicated consumer factory — the yml default factory
+pins `spring.json.value.default.type` to `PaymentCompletedEvent`, so the loan listener pins
+`LoanApprovedEvent` instead. The same `ProcessedEvent` guard applies; the resulting
+`LedgerEntry` is a CREDIT with `loanId` set.
+
 **Known bug found and fixed during the extraction:** `ProcessedEvent`'s `eventId` is a
 manually-assigned `String` (no `@GeneratedValue`). Spring Data JPA's default `save()` decides
 `persist()` vs `merge()` based on whether the `@Id` is null — since it's always non-null here,
@@ -76,10 +82,23 @@ deserialize at all (`ErrorHandlingDeserializer` wraps the `JsonDeserializer` pre
 poison-pill message can't crash the consumer), `FailedEventRecorder` persists a `FailedEvent`
 row — this is the dead-letter store, reusing the table that already existed in the monolith.
 
+### loan-service
+
+Owns the `loans` table (its own database: `ledgerflow_loan`). Exposes `/api/v1/loans`
+(`POST` create, `POST /{id}/approve`, `GET /{id}`) and is the second Kafka **producer**.
+JWT resource server, same shared-HMAC pattern and demo user as `payment-service`.
+
+Publish path: approving a loan fires `LoanEventKafkaBridge` (same `AFTER_COMMIT` bridge
+pattern as payment-service), which sends `LoanApprovedEvent` to `loan.approved` keyed by
+`loanId`. No reconciliation job (no `@EnableScheduling`) and no rejection flow — see
+"Explicitly out of scope" below. Design detail:
+[docs/superpowers/specs/2026-09-03-loan-service-design.md](docs/superpowers/specs/2026-09-03-loan-service-design.md).
+
 ## ledgerflow-contracts
 
 The shared Kafka message schema: `PaymentCompletedEvent` (`eventId`, `paymentId`, `userId`,
-`amount`, `currency`, `type: EntryType`) and `EntryType` (`DEBIT`/`CREDIT`). Extracted here
+`amount`, `currency`, `type: EntryType`), `LoanApprovedEvent` (`eventId`, `loanId`, `userId`,
+`amount`, `currency`), and `EntryType` (`DEBIT`/`CREDIT`). Extracted here
 specifically to fix a smell in the monolith where the event class (in the `payment` package)
 imported an enum from the `ledger` package — a cross-service dependency that becomes
 impossible once they're actually separate deployables.
@@ -110,36 +129,43 @@ PaymentEventKafkaBridge --> Kafka topic "payment.completed" (key = paymentId)
 On consumer failure: retry with backoff (2 retries) → still failing, or a deserialization
 error → `FailedEvent` row (dead-letter), consumer keeps processing subsequent messages.
 
+The loan flow mirrors this exactly: `POST /api/v1/loans/{id}/approve` → `LoanEventKafkaBridge`
+publishes `LoanApprovedEvent` to `loan.approved` (key = `loanId`) → ledger-service's loan
+listener (its own consumer factory, since the yml default pins `PaymentCompletedEvent`) runs
+the same `ProcessedEvent` guard and posts a CREDIT `LedgerEntry` with `loanId` set.
+
 ## Local infrastructure
 
-`docker-compose.yml`: two Postgres containers (one per service database), a single-node Kafka
+`docker-compose.yml`: three Postgres containers (one per service database), a single-node Kafka
 broker in KRaft mode (no Zookeeper), and a Kafdrop UI for inspecting topics/consumer lag.
-`payment-service/Dockerfile` and `ledger-service/Dockerfile` are multi-stage builds whose
-context must be the **repo root** (not the module directory), since the build needs to see
-the parent `pom.xml` and the `ledgerflow-contracts` module.
+`payment-service/Dockerfile`, `ledger-service/Dockerfile`, and `loan-service/Dockerfile` are
+multi-stage builds whose context must be the **repo root** (not the module directory), since
+the build needs to see the parent `pom.xml` and the `ledgerflow-contracts` module.
 
 `k8s/` has early Kubernetes manifests: `00-namespace.yaml` (the `ledger-flow` namespace) and
-`10-postgres-payment.yaml` / `11-postgres-ledger.yaml` (a Secret + PVC + hardened Deployment +
-Service for each Postgres instance, matching `docker-compose.yml`'s credentials and database
-names). The `00-`/`10-`/`11-` filename prefixes exist because `kubectl apply -f k8s/` doesn't
-guarantee cross-file ordering and the namespace must exist before the namespaced resources.
-`.github/workflows/k8s-verify.yml` applies them to a real `kind` cluster in CI and confirms
-both databases come up and accept queries. Only the databases are on Kubernetes so far —
-`payment-service` and `ledger-service` themselves aren't deployed there yet (see "Explicitly
+`10-postgres-payment.yaml` / `11-postgres-ledger.yaml` / `12-postgres-loan.yaml` (a Secret +
+PVC + hardened Deployment + Service for each Postgres instance, matching
+`docker-compose.yml`'s credentials and database names). The `00-`/`10-`/`11-`/`12-` filename
+prefixes exist because `kubectl apply -f k8s/` doesn't guarantee cross-file ordering and the
+namespace must exist before the namespaced resources. `.github/workflows/k8s-verify.yml`
+applies them to a real `kind` cluster in CI and confirms all three databases come up and
+accept queries. Only the databases are on Kubernetes so far — `payment-service`,
+`ledger-service`, and `loan-service` themselves aren't deployed there yet (see "Explicitly
 out of scope" below).
 
 ## Authentication
 
-`payment-service` requires a JWT on every request except the paths `/api/v1/auth/login`,
-`/actuator/health` (the latter must stay open for docker-compose/k8s health probes), and
-`/error`. The exemption in `SecurityConfig` is path-based, not method-restricted — it isn't
-specifically "only `POST` to `/login`" or "only `GET` to `/health`", even though those are the
-only methods actually routed to those paths today. `/error` is exempted for a different reason:
-Spring Boot's default error handling forwards any `sendError()` internally to `GET /error`
-(e.g. a `@Valid` failure on the login request), and without permitting it the security chain
-would intercept that forward and mask the real status code with its own 401 response.
-`ledger-service` is unchanged — it has no business REST API (only Actuator health), so there's
-nothing there to protect yet; revisit when it gets a real API or an API gateway is introduced.
+`payment-service` and `loan-service` require a JWT on every request except the paths
+`/api/v1/auth/login`, `/actuator/health` (the latter must stay open for docker-compose/k8s
+health probes), and `/error`. The exemption in `SecurityConfig` is path-based, not
+method-restricted — it isn't specifically "only `POST` to `/login`" or "only `GET` to
+`/health`", even though those are the only methods actually routed to those paths today.
+`/error` is exempted for a different reason: Spring Boot's default error handling forwards any
+`sendError()` internally to `GET /error` (e.g. a `@Valid` failure on the login request), and
+without permitting it the security chain would intercept that forward and mask the real
+status code with its own 401 response. `ledger-service` is unchanged — it has no business REST
+API (only Actuator health), so there's nothing there to protect yet; revisit when it gets a
+real API or an API gateway is introduced.
 
 - **Issuing**: `POST /api/v1/auth/login` (`AuthController`) authenticates against an in-memory
   demo user store (`InMemoryUserDetailsManager`, one user, BCrypt-hashed password — not
@@ -161,7 +187,7 @@ nothing there to protect yet; revisit when it gets a real API or an API gateway 
 
 `ledger-service`'s `SecurityConfig` is still a wide-open `permitAll()` placeholder (CSRF
 disabled, frame options disabled) — deliberate, since it has no protected surface yet (see
-above). `payment-service` now requires authentication as described above.
+above). `payment-service` and `loan-service` now require authentication as described above.
 
 ## Explicitly out of scope (deliberate, not forgotten)
 
@@ -176,19 +202,23 @@ These were discussed and intentionally deferred, in roughly this order:
    milestone didn't need yet.
 3. **`ledger-service` as a resource server.** No business API to protect yet — see
    "Authentication" above.
-4. **API gateway.** Would sit in front of both services once there's a single entry point
+4. **API gateway.** Would sit in front of all three services once there's a single entry point
    worth centralizing auth at.
 5. **Full Kubernetes deployment of the application services.** `k8s/` already has manifests
-   for the namespace and both Postgres instances (see "Local infrastructure" above), verified
-   in CI against a real `kind` cluster, but `payment-service` and `ledger-service` themselves
-   aren't deployed to Kubernetes yet — Deployment/Service manifests for the two app JARs, plus
-   Secrets for `JWT_SECRET` and the Kafka bootstrap config, are the natural next step.
-6. **Schema registry / Avro.** JSON is deliberately used for `payment.completed` today; this
-   is a real future concern once a second event type needs to share a topic or the schema
-   needs to evolve safely.
+   for the namespace and all three Postgres instances (see "Local infrastructure" above),
+   verified in CI against a real `kind` cluster, but `payment-service`, `ledger-service`, and
+   `loan-service` themselves aren't deployed to Kubernetes yet — Deployment/Service manifests
+   for the three app JARs, plus Secrets for `JWT_SECRET` and the Kafka bootstrap config, are
+   the natural next step.
+6. **Schema registry / Avro.** JSON is deliberately used for `payment.completed` and
+   `loan.approved` today; this is a real future concern once a second event type needs to
+   share a topic or the schema needs to evolve safely.
 7. **Ack-loop reconciliation.** A `ledgerAckAt` column + a `ledger.entry-posted` ack topic,
    replacing the current time-threshold heuristic — a legitimate next step, but sequenced
    after the one-directional Kafka flow is comfortable, not bundled into it.
+8. **Loan rejection / repayment schedules.** `loan-service` only approves — no rejection
+   flow, no repayment/interest scheduling, and no reconciliation job (no `@EnableScheduling`).
+   The loan flow is deliberately one-directional for now, mirroring payments.
 
 Do not "helpfully" start implementing any of the above without it being the explicit ask —
 each is a deliberately separate milestone.

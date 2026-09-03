@@ -235,7 +235,7 @@ gotcha worth knowing before you add a new test).
 ## 🤖 CI/CD
 
 Three GitHub Actions workflows run on every push/PR to `main`:
-1. **`maven.yml`** — builds and tests all three Maven modules against a real Postgres database.
+1. **`maven.yml`** — builds and tests all four Maven modules against a real Postgres database.
 2. **`docker-compose-e2e.yml`** — builds all three service Docker images, brings up the full
    `docker-compose.yml` stack, logs in for a JWT, posts a real payment through it, and confirms
    the event reaches `ledger-service` and lands in Postgres — end-to-end verification of the

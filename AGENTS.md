@@ -32,7 +32,7 @@ Each service module mirrors the same internal layout:
 ## Build & test
 
 ```bash
-./mvnw clean install              # build + test all 3 modules (reactor build)
+./mvnw clean install              # build + test all 4 modules (reactor build)
 ./mvnw test                       # tests only
 ./mvnw -pl payment-service test   # one module only (needs -am if it depends on contracts changes)
 ./mvnw spotless:apply             # auto-format (Google Java Format) - run before committing
