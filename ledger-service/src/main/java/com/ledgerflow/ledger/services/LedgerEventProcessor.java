@@ -1,5 +1,7 @@
 package com.ledgerflow.ledger.services;
 
+import com.ledgerflow.contracts.events.EntryType;
+import com.ledgerflow.contracts.events.LoanApprovedEvent;
 import com.ledgerflow.contracts.events.PaymentCompletedEvent;
 import com.ledgerflow.ledger.entities.LedgerEntry;
 import com.ledgerflow.ledger.entities.ProcessedEvent;
@@ -45,6 +47,35 @@ public class LedgerEventProcessor {
             .amount(event.getAmount())
             .currency(event.getCurrency())
             .type(event.getType())
+            .createdAt(LocalDateTime.now())
+            .build();
+
+    ledgerRepository.save(entry);
+  }
+
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public void processLoanApproved(LoanApprovedEvent event) {
+    try {
+      processedEventRepository.saveAndFlush(
+          ProcessedEvent.builder()
+              .eventId(event.getEventId())
+              .processedAt(LocalDateTime.now())
+              .build());
+    } catch (DataIntegrityViolationException ex) {
+      if (!isDuplicateKeyViolation(ex)) {
+        throw ex;
+      }
+      log.info("Ledger: skipping already processed loan event {}", event.getEventId());
+      return;
+    }
+
+    LedgerEntry entry =
+        LedgerEntry.builder()
+            .accountId(event.getUserId())
+            .loanId(event.getLoanId())
+            .amount(event.getAmount())
+            .currency(event.getCurrency())
+            .type(EntryType.CREDIT)
             .createdAt(LocalDateTime.now())
             .build();
 

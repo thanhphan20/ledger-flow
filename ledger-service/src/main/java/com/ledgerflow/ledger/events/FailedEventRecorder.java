@@ -2,6 +2,7 @@ package com.ledgerflow.ledger.events;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ledgerflow.contracts.events.LoanApprovedEvent;
 import com.ledgerflow.contracts.events.PaymentCompletedEvent;
 import com.ledgerflow.ledger.entities.FailedEvent;
 import com.ledgerflow.ledger.repositories.FailedEventRepository;
@@ -30,6 +31,13 @@ public class FailedEventRecorder {
         event.getEventId(), event.getClass().getSimpleName(), serialize(event), error.getMessage());
   }
 
+  public void recordProcessingFailure(LoanApprovedEvent event, Exception error) {
+    log.error(
+        "Exhausted retries for loan event {}. Saving to failed_events.", event.getEventId(), error);
+    save(
+        event.getEventId(), event.getClass().getSimpleName(), serialize(event), error.getMessage());
+  }
+
   public void recordDeserializationFailure(String rawRecordDescription, Exception error) {
     log.error(
         "Failed to deserialize Kafka record {}. Saving to failed_events.",
@@ -53,7 +61,7 @@ public class FailedEventRecorder {
             .build());
   }
 
-  private String serialize(PaymentCompletedEvent event) {
+  private String serialize(Object event) {
     try {
       return objectMapper.writeValueAsString(event);
     } catch (JsonProcessingException ex) {

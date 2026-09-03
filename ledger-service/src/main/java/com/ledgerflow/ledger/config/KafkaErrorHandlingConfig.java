@@ -1,5 +1,6 @@
 package com.ledgerflow.ledger.config;
 
+import com.ledgerflow.contracts.events.LoanApprovedEvent;
 import com.ledgerflow.contracts.events.PaymentCompletedEvent;
 import com.ledgerflow.ledger.events.FailedEventRecorder;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,8 @@ public class KafkaErrorHandlingConfig {
             (record, exception) -> {
               if (record.value() instanceof PaymentCompletedEvent event) {
                 failedEventRecorder.recordProcessingFailure(event, exception);
+              } else if (record.value() instanceof LoanApprovedEvent loanEvent) {
+                failedEventRecorder.recordProcessingFailure(loanEvent, exception);
               } else {
                 String description =
                     "%s-partition%d-offset%d"
