@@ -45,7 +45,7 @@ jobs:
 
     # ledger-service and payment-service each own their own database; the postgres service
     # container above only creates ledgerflow_payment at startup (via POSTGRES_DB), so
-    # ledgerflow_ledger needs to be created explicitly before the build/tests run.
+    # ledgerflow_ledger and ledgerflow_loan need to be created explicitly before the build/tests run.
     - name: Create ledger-service database
       run: PGPASSWORD=password psql -h localhost -U postgres -c "CREATE DATABASE ledgerflow_ledger;"
 
