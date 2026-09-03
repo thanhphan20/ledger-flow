@@ -1,0 +1,30 @@
+spring:
+  # This file replaces src/main/resources/application.yml entirely on the test classpath (Spring
+  # Boot loads whichever application.yml it finds first, it does not merge the two), so anything
+  # the app needs at runtime has to be repeated here rather than just listing overrides.
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    properties:
+      spring.json.add.type.headers: false
+
+  datasource:
+    url: jdbc:h2:mem:loantest;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+# Same dev-only value as src/main/resources/application.yml - this file replaces main config
+# entirely on the test classpath, so it must be repeated here or JwtConfig's beans fail to
+# construct and every @SpringBootTest in this module fails to start its context.
+jwt:
+  secret: dev-only-insecure-jwt-signing-key-change-me-1234567890

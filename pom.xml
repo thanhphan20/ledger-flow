@@ -32,6 +32,7 @@
 		<module>ledgerflow-contracts</module>
 		<module>payment-service</module>
 		<module>ledger-service</module>
+		<module>loan-service</module>
 	</modules>
 
 	<properties>
