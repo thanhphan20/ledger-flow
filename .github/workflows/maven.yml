@@ -49,6 +49,9 @@ jobs:
     - name: Create ledger-service database
       run: PGPASSWORD=password psql -h localhost -U postgres -c "CREATE DATABASE ledgerflow_ledger;"
 
+    - name: Create loan-service database
+      run: PGPASSWORD=password psql -h localhost -U postgres -c "CREATE DATABASE ledgerflow_loan;"
+
     - name: Format, Fix and Build with Maven
       run: ./mvnw clean spotless:apply install -B
 
