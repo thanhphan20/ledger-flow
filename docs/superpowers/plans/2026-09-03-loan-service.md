@@ -1398,8 +1398,8 @@ git commit -m "feat(infra): add loan-db and loan-service to docker compose"
 
 - [ ] **Step 2: Validate YAML**
 
-Run: `python -c "import yaml; yaml.safe_load(open('k8s/12-postgres-loan.yaml', encoding='utf-8')); print('ok')"`
-Expected: `ok`
+Run: `python -c "import yaml; docs=list(yaml.safe_load_all(open('k8s/12-postgres-loan.yaml', encoding='utf-8'))); print(len(docs))"`
+Expected: `4` (Secret, PVC, Deployment, Service — the file is multi-document YAML, so `safe_load_all` is required; plain `safe_load` fails on both this file and the payment source)
 
 - [ ] **Step 3: Commit**
 
