@@ -41,6 +41,7 @@ public class LoanController {
   @PostMapping("/{id}/approve")
   @Operation(summary = "Approve a pending loan and publish LoanApprovedEvent")
   @ApiResponse(responseCode = "200", description = "Loan approved")
+  @ApiResponse(responseCode = "404", description = "Loan not found")
   @ApiResponse(responseCode = "409", description = "Loan already approved")
   public ResponseEntity<LoanResponse> approveLoan(@PathVariable Long id) {
     return ResponseEntity.ok(LoanResponse.from(loanService.approveLoan(id)));
@@ -49,6 +50,7 @@ public class LoanController {
   @GetMapping("/{id}")
   @Operation(summary = "Fetch a loan by id")
   @ApiResponse(responseCode = "200", description = "Loan found")
+  @ApiResponse(responseCode = "404", description = "Loan not found")
   public ResponseEntity<LoanResponse> getLoan(@PathVariable Long id) {
     return ResponseEntity.ok(LoanResponse.from(loanService.getLoan(id)));
   }
