@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-loan-credentials
+  namespace: ledger-flow
+type: Opaque
+stringData:
+  # Dev-only value, matching docker-compose.yml. A real deployment must supply its own.
+  POSTGRES_PASSWORD: password
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-loan-data
+  namespace: ledger-flow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-loan
+  namespace: ledger-flow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-loan
+  # RollingUpdate would try to start a second pod against the same ReadWriteOnce PVC on
+  # any future re-apply, which hangs. Recreate tears the old pod down first.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: postgres-loan
+    spec:
+      # postgres:16 runs as the built-in postgres user (uid/gid 999); fsGroup makes the
+      # mounted PVC writable by that group.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      # A fresh PVC is provisioned root-owned. postgres's own entrypoint needs to chown/chmod
+      # its data dir to itself on first init, which needs capabilities the main container
+      # deliberately drops - so fix ownership here, as root, before the hardened container starts.
+      initContainers:
+        - name: fix-data-permissions
+          image: postgres:16
+          command: ["sh", "-c", "chown -R 999:999 /var/lib/postgresql/data /var/run/postgresql && chmod 0700 /var/lib/postgresql/data"]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: ledgerflow_loan
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-loan-credentials
+                  key: POSTGRES_PASSWORD
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            # postgres's entrypoint and server need to write here; readOnlyRootFilesystem
+            # means these must be separate writable mounts rather than part of the rootfs.
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /var/run/postgresql
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-loan-data
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-loan
+  namespace: ledger-flow
+spec:
+  selector:
+    app: postgres-loan
+  ports:
+    - port: 5432
+      targetPort: 5432
