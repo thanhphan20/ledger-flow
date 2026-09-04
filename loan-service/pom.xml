@@ -53,6 +53,9 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-kafka</artifactId>
 		</dependency>
+		<!-- Boot 4 moved Flyway autoconfiguration (FlywayAutoConfiguration, spring.flyway.* properties)
+		     out of spring-boot-autoconfigure into its own module; the starter
+		     brings in spring-boot-flyway + flyway-core. Without it Flyway never runs. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-flyway</artifactId>
