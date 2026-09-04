@@ -1,6 +1,7 @@
 package com.ledgerflow.loan.events;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.ledgerflow.contracts.events.LoanApprovedEvent;
 import com.ledgerflow.loan.entities.Loan;
@@ -11,7 +12,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -56,11 +57,26 @@ class LoanEventKafkaBridgeTest {
         new DefaultKafkaConsumerFactory<>(consumerProps);
     try (Consumer<String, LoanApprovedEvent> consumer = consumerFactory.createConsumer()) {
       embeddedKafkaBroker.consumeFromAnEmbeddedTopic(consumer, "loan.approved");
-      ConsumerRecord<String, LoanApprovedEvent> record =
-          KafkaTestUtils.getSingleRecord(consumer, "loan.approved", Duration.ofSeconds(10));
-      assertThat(record.key()).isEqualTo(loanId.toString());
-      assertThat(record.value().getLoanId()).isEqualTo(loanId);
-      assertThat(record.value().getAmount()).isEqualByComparingTo("500.00");
+      final org.apache.kafka.clients.consumer.ConsumerRecord<String, LoanApprovedEvent>[]
+          holder = new org.apache.kafka.clients.consumer.ConsumerRecord[1];
+      // getSingleRecord aborts if a single poll returns >1 record; the @SpringBootTest context is
+      // shared with LoanServiceApprovalTest, whose approves leave stale records on this same
+      // EmbeddedKafka topic, so drain and match this loan's event by its unique key instead.
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () -> {
+                ConsumerRecords<String, LoanApprovedEvent> polled =
+                    consumer.poll(Duration.ofSeconds(1));
+                holder[0] =
+                    polled.records("loan.approved").stream()
+                        .filter(r -> r.key().equals(loanId.toString()))
+                        .findFirst()
+                        .orElse(null);
+                assertThat(holder[0]).isNotNull();
+              });
+      assertThat(holder[0].value().getLoanId()).isEqualTo(loanId);
+      assertThat(holder[0].value().getAmount()).isEqualByComparingTo("500.00");
     }
   }
 }
