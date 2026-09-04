@@ -18,10 +18,13 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
+
+  flyway:
+    baseline-on-migrate: true
 
 # Same dev-only value as src/main/resources/application.yml - this file replaces main config
 # entirely on the test classpath, so it must be repeated here or JwtConfig's beans fail to
