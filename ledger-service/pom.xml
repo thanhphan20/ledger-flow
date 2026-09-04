@@ -45,6 +45,15 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-kafka</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-flyway</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
 		<!-- Boot 4's own Jackson stack moved to tools.jackson:*; FailedEventRecorder/JacksonConfig
 		     still use the classic com.fasterxml.jackson API (as the original monolith did), so it's
 		     declared explicitly here rather than relying on a transitive pull. -->
