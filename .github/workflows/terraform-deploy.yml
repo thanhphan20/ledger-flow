@@ -1,0 +1,127 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+env:
+  TF_VERSION: '1.7.0'
+  AWS_REGION: 'us-east-1'
+
+jobs:
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      
+      - name: Terraform Format
+        run: terraform -chdir=terraform/prod fmt -check
+      
+      - name: Terraform Init
+        run: terraform -chdir=terraform/prod init
+      
+      - name: Terraform Validate
+        run: terraform -chdir=terraform/prod validate
+      
+      - name: Terraform Plan
+        if: github.event_name == 'pull_request' || github.event.inputs.action == 'plan'
+        run: |
+          terraform -chdir=terraform/prod plan \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="environment=prod" \
+            -var="db_passwords={\"payment\":\"${{ secrets.DB_PASSWORD_PAYMENT }}\",\"ledger\":\"${{ secrets.DB_PASSWORD_LEDGER }}\",\"loan\":\"${{ secrets.DB_PASSWORD_LOAN }}\"}" \
+            -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
+            -var="image_tag=${{ github.sha }}"
+        continue-on-error: false
+      
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply' && github.ref == 'refs/heads/main'
+        run: |
+          terraform -chdir=terraform/prod apply -auto-approve \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="environment=prod" \
+            -var="db_passwords={\"payment\":\"${{ secrets.DB_PASSWORD_PAYMENT }}\",\"ledger\":\"${{ secrets.DB_PASSWORD_LEDGER }}\",\"loan\":\"${{ secrets.DB_PASSWORD_LOAN }}\"}" \
+            -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
+            -var="image_tag=${{ github.sha }}"
+        env:
+          TF_IN_AUTOMATION: "1"
+      
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy' && github.ref == 'refs/heads/main'
+        run: |
+          terraform -chdir=terraform/prod destroy -auto-approve \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="environment=prod" \
+            -var="db_passwords={\"payment\":\"${{ secrets.DB_PASSWORD_PAYMENT }}\",\"ledger\":\"${{ secrets.DB_PASSWORD_LEDGER }}\",\"loan\":\"${{ secrets.DB_PASSWORD_LOAN }}\"}" \
+            -var="jwt_secret=${{ secrets.JWT_SECRET }}"
+        env:
+          TF_IN_AUTOMATION: "1"
+
+  build-and-push:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    needs: terraform
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    
+    strategy:
+      matrix:
+        service: [payment-service, ledger-service, loan-service]
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      - name: Build & Push
+        run: |
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ENVIRONMENT }}/${{ matrix.service }}:${{ github.sha }} .
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ENVIRONMENT }}/${{ matrix.service }}:${{ github.sha }}
+        working-directory: ${{ matrix.service }}
+      env:
+        ENVIRONMENT: prod
