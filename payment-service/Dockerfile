@@ -8,6 +8,7 @@ COPY .mvn .mvn
 COPY ledgerflow-contracts ledgerflow-contracts
 COPY payment-service payment-service
 COPY ledger-service ledger-service
+COPY loan-service loan-service
 
 RUN chmod +x mvnw && ./mvnw -q -pl payment-service -am -DskipTests package
 

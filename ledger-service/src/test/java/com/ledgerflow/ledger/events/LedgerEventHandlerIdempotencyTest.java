@@ -9,6 +9,7 @@ import com.ledgerflow.ledger.repositories.LedgerRepository;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -49,7 +50,7 @@ class LedgerEventHandlerIdempotencyTest {
             () ->
                 assertThat(
                         ledgerRepository.findAll().stream()
-                            .filter(entry -> entry.getPaymentId().equals(42L))
+                            .filter(entry -> Objects.equals(entry.getPaymentId(), 42L))
                             .count())
                     .isEqualTo(1));
   }
