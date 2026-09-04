@@ -46,6 +46,7 @@ as a monolith and has since been split into three independently-deployable micro
 - **Messaging**: Apache Kafka (via spring-kafka)
 - **Database**: PostgreSQL (one instance per service)
 - **Persistence**: Spring Data JPA / Hibernate
+- **Migrations**: Flyway (versioned SQL migrations, validated on startup)
 - **Security**: Spring Security OAuth2 Resource Server, JWT via Nimbus JOSE (`payment-service`,
   `loan-service`)
 - **Tooling**: Maven (multi-module), Spotless, Lombok, Docker Compose, Kubernetes (`kind`,
@@ -223,6 +224,7 @@ java -jar loan-service/target/loan-service-*.jar &
 ./mvnw test                       # tests only
 ./mvnw -pl payment-service test   # a single module
 ./mvnw spotless:apply             # auto-format before committing
+./mvnw flyway:migrate             # run Flyway migrations manually
 ```
 
 Smoke tests need real Postgres databases (`ledgerflow_payment`, `ledgerflow_ledger`,
