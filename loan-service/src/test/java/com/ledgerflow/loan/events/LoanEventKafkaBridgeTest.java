@@ -68,11 +68,13 @@ class LoanEventKafkaBridgeTest {
               () -> {
                 ConsumerRecords<String, LoanApprovedEvent> polled =
                     consumer.poll(Duration.ofSeconds(1));
-                holder[0] =
-                    polled.records("loan.approved").stream()
-                        .filter(r -> r.key().equals(loanId.toString()))
-                        .findFirst()
-                        .orElse(null);
+                holder[0] = null;
+                for (var r : polled.records("loan.approved")) {
+                  if (r.key().equals(loanId.toString())) {
+                    holder[0] = r;
+                    break;
+                  }
+                }
                 assertThat(holder[0]).isNotNull();
               });
       assertThat(holder[0].value().getLoanId()).isEqualTo(loanId);
